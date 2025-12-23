@@ -16,24 +16,24 @@ def job():
 def main():
     ist = ZoneInfo("Asia/Kolkata")
     scheduler = BackgroundScheduler(timezone=ist)
-    # Saturday at 10:00 IST
-    # scheduler.add_job(
-    #     job,
-    #     "cron",
-    #     day_of_week="sat",
-    #     hour=10,
-    #     minute=0,
-    #     id="weekly_movie_review",
-    #     timezone=ist,
-    # )
-    # For testing: every minute
+    # Saturday at 11:00 IST
     scheduler.add_job(
         job,
-        "interval",
-        minutes=1,
-        id="test_movie_review",
+        "cron",
+        day_of_week="sat",
+        hour=11,
+        minute=0,
+        id="weekly_movie_review",
         timezone=ist,
     )
+    # For testing: every minute
+    # scheduler.add_job(
+    #     job,
+    #     "interval",
+    #     minutes=1,
+    #     id="test_movie_review",
+    #     timezone=ist,
+    # )
     scheduler.start()
     logger.info("Scheduler started. Press Ctrl+C to exit.")
 

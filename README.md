@@ -48,9 +48,8 @@ Each source gets weighted scores:
 
 **Result:** The #1 buzzing movie/show wins! 🏆
 
-### 📺 Dual Content Pipeline
-- **Movies** → Friday 6 PM IST
-- **TV Shows** → Sunday 6 PM IST  
+### 📺 Content Pipeline
+- **Movies & TV Shows** → Saturday 11 PM IST
 *(Configurable in scheduler)*
 
 ### 🚫 Smart Duplicate Detection
