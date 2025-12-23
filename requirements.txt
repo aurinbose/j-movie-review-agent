@@ -1,0 +1,8 @@
+crewai
+crewai-tools
+apscheduler
+beautifulsoup4
+requests
+flask
+python-dotenv
+groq
