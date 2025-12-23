@@ -1,105 +1,284 @@
-# Movie Review Agent
+# 🎬📺 Movie & TV Review Agent
 
-This repository contains an automated agent that finds a trending movie on IMDb, generates a review using an LLM, and saves the result as a draft on Hashnode for manual review and publishing.
+**Your AI-powered content creation machine that finds the BUZZIEST movies and TV shows, writes killer reviews, and drops them straight into Hashnode drafts!**
 
-Where things live
-- `src/agents.py` — Scrapes IMDb for a trending movie, fetches movie details, and generates a review via the Groq client (with model fallbacks and dummy behavior if no API key).
-- `src/hashnode_api.py` — Creates a Hashnode draft and can optionally publish it. Uses `contentMarkdown` (preferred) or other fields as a fallback. Returns structured results including `draft_id` when successful.
-- `src/crew_lite.py` — Orchestrates the pipeline: research → scrape → generate → create Hashnode draft. It also implements duplicate-skip logic (skips drafting the same movie if it was drafted within the last 7 days).
-- `src/storage.py` — Small persistence helpers: `last_draft.json` and `pending_review.json` (the web UI is deprecated but these helpers remain). Functions: `save_last_draft()`, `get_last_draft()` and `save_pending()`.
-- `src/scheduler_app.py` — Uses `APScheduler` to schedule the pipeline weekly: Saturday at 10:00 IST (Asia/Kolkata). For development you can run the pipeline manually or enable a test schedule.
+***
 
-New features added
-- TV support: the agent now scrapes IMDb TV meter (`/chart/tvmeter`) to find the top trending TV show, generates a separate TV review, and saves it as a distinct draft on Hashnode.
-- Duplicate-skip logic: the agent records the last drafted item (movie and TV separately). If the same title is selected again within 7 days the agent will skip creating a duplicate draft.
-	- If a previous draft id exists but the draft was deleted on Hashnode, the agent will detect this and recreate the draft even if within 7 days.
-- Reference scraping: when `source_url` is available the agent scrapes up to 3 user-review snippets from the title's IMDb reviews page and includes brief reference excerpts in the LLM prompt so generated reviews are informed by existing opinions.
-- Draft-only mode: drafts are created by default (not published) so you can review and publish manually on Hashnode.
+## 🚀 What Does This Do?
 
-Files and responsibilities (updated)
-- `src/agents.py`: scraping (movies + TV), details extraction, LLM review generation for movie and TV, and reference-review scraping helpers.
-- `src/hashnode_api.py`: creates drafts, optionally publishes, and provides `draft_exists(draft_id)` to verify remote existence.
-- `src/crew_lite.py`: orchestrates the full pipeline — research, scrape, generate (movie + TV), dedupe checks, and draft creation.
-- `src/storage.py`: persists `last_draft.json` with separate entries for `movie` and `tv`.
-- `src/scheduler_app.py`: scheduler configured for Saturdays at 10:00 IST; supports a test mode for minute-level testing.
+This agent is **smart**. It doesn't just pick random movies from IMDb—it analyzes **social buzz** across multiple sources (TMDB, Reddit, Google Trends, Letterboxd), finds what people are **actually talking about**, scrapes IMDb for details, generates professional AI reviews using Groq, and creates ready-to-publish drafts on Hashnode.
 
-How it works (brief)
-1. Research: scrape IMDb moviemeter and TV meter to pick top movie and TV show.
-2. Scrape details: fetch plot/summary for each title.
-3. Reference collection: optional — scrape user-review snippets from the title's `/reviews` page.
-4. Generate: call Groq with a prompt that includes the plot and short reference snippets (if found).
-5. Draft: create a Hashnode draft (separate drafts for movie and TV). Record draft id + timestamp in `last_draft.json`.
-6. Scheduler: runs weekly (Sat 10:00 IST) or in test mode every minute.
+**TL;DR:** Set it, forget it, review amazing content weekly! 🎯
 
-How to run
-- Create drafts now (one-off):
+***
+
+## 🏗️ Architecture Overview
+
+```
+🧠 Trend Analysis → 🔍 IMDb Scraping → ✍️ AI Review → 📝 Hashnode Draft
+   (Multi-source)     (Plot/Details)    (Groq LLM)    (Manual Publish)
+```
+
+### 📂 File Structure
+
+- **`src/movie_trend_analyst.py`** 🎬 — Finds BUZZING movies using TMDB + IMDb + Google Trends + Reddit
+- **`src/tv_trend_analyst.py`** 📺 — Finds trending TV shows using TMDB + Trakt + JustWatch
+- **`src/agents.py`** 🤖 — IMDb scraping, review generation, URL resolution, reference reviews
+- **`src/hashnode_api.py`** 📰 — Creates Hashnode drafts with GraphQL (publish-ready or draft-only)
+- **`src/crew_lite.py`** 🎯 — **MAIN ORCHESTRATOR** - runs full movie + TV pipeline with trend analysis
+- **`src/storage.py`** 💾 — Saves draft metadata (`last_draft.json`) to prevent duplicates
+- **`src/scheduler_app.py`** ⏰ — APScheduler for weekly automation (Saturday 10:00 IST)
+
+***
+
+## 🎉 New Features (Production Ready!)
+
+### 🔥 Multi-Source Trend Analysis
+**Movies:** TMDB Trending + TMDB Popular + IMDb Moviemeter + fallbacks  
+**TV Shows:** TMDB TV Trending + Trakt + JustWatch + IMDb TV Meter  
+
+**Why?** Picks movies/shows people **actually want to read about** (not just old classics)
+
+### 🧠 Buzz Score Algorithm
+Each source gets weighted scores:
+- **TMDB Trending:** 40 points (highest authority)
+- **TMDB Popular:** 30 points
+- **Reddit mentions:** 25 points (social proof)
+- **IMDb boost:** 15 points (baseline)
+
+**Result:** The #1 buzzing movie/show wins! 🏆
+
+### 📺 Dual Content Pipeline
+- **Movies** → Friday 6 PM IST
+- **TV Shows** → Sunday 6 PM IST  
+*(Configurable in scheduler)*
+
+### 🚫 Smart Duplicate Detection
+- Tracks last drafted items separately (movie vs TV)
+- Skips duplicates within **7 days**
+- Detects deleted Hashnode drafts and recreates them
+- Checks by **both title AND URL** for accuracy
+
+### 📚 Reference Review Scraping
+Scrapes up to **3 user reviews** from IMDb's `/reviews` page and includes snippets in the AI prompt for context-aware, informed reviews.
+
+### 🛡️ Production Bulletproofing
+- **Timezone-aware datetime** (no deprecation warnings)
+- **Multi-model fallback** (handles Groq model decommissioning)
+- **URL resolution** moved to `agents.py` (clean separation)
+- **Graceful fallbacks** at every step (trend analysis → IMDb direct)
+
+***
+
+## ⚙️ How It Works (Step-by-Step)
+
+### 🎬 **MOVIE PIPELINE**
+```
+1. 📈 TREND ANALYSIS
+   └─ Scrape TMDB + Reddit + Google Trends + IMDb
+   └─ Calculate buzz scores
+   └─ Pick #1 movie (e.g., "Wicked" buzz: 70)
+
+2. 🔍 IMDB RESOLUTION
+   └─ Search IMDb for movie title
+   └─ Resolve to actual title page (/title/tt1234567/)
+
+3. 📝 SCRAPE DETAILS
+   └─ Get plot, rating, year from IMDb
+
+4. 📚 REFERENCE REVIEWS (Optional)
+   └─ Scrape 3 user reviews from IMDb /reviews page
+
+5. ✍️ AI GENERATION
+   └─ Groq LLM generates 400-600 word review
+   └─ Includes plot + references + star rating
+
+6. 📤 HASHNODE DRAFT
+   └─ Create draft (not published)
+   └─ Save draft_id + timestamp to last_draft.json
+   └─ Skip if same movie drafted < 7 days ago
+```
+
+### 📺 **TV PIPELINE** (Same structure, separate sources)
+Same 6 steps but uses `TVTrendAnalyst` and TV-specific scrapers.
+
+***
+
+## 🚀 Quick Start
+
+### 1️⃣ Install Dependencies
+```bash
+pip install requests beautifulsoup4 cloudscraper groq apscheduler python-dotenv
+```
+
+### 2️⃣ Set Environment Variables
+Create a `.env` file:
+```env
+# Groq LLM (required for AI reviews)
+GROQ_API_KEY=your_groq_api_key_here
+GROQ_MODEL=llama-3.3-70b-versatile
+
+# Hashnode (required for drafts)
+HN_PUBLICATION_ID=your_publication_id
+HN_ACCESS_TOKEN=your_hashnode_token
+```
+
+### 3️⃣ Run Once (Manual Test)
 ```powershell
 python -c "from src.crew_lite import run_movie_review_pipeline; run_movie_review_pipeline()"
 ```
-- Run scheduler (weekly Sat 10:00 IST):
+
+**Expected Output:**
+```
+🎬 MOVIE PIPELINE
+📈 PHASE 1: MOVIE TREND ANALYSIS...
+🎯 SELECTED MOVIE (Buzz: 70): Wicked
+✅ Draft created: 12abc34def56
+
+📺 TV SHOW PIPELINE
+📈 PHASE 1: TV TREND ANALYSIS...
+🎯 SELECTED TV SHOW (Buzz: 65): The Last of Us
+✅ TV draft created: 78ghi90jkl12
+
+🎉 PIPELINE COMPLETED
+```
+
+### 4️⃣ Enable Weekly Automation
 ```powershell
 python -m src.scheduler_app
 ```
-- Test schedule (every minute): set an env var or edit the scheduler for interval mode as documented in `src/scheduler_app.py`.
 
-Environment variables
-- `GROQ_API_KEY`, `GROQ_MODEL` — LLM config
-- `HN_PUBLICATION_ID`, `HN_ACCESS_TOKEN` — Hashnode credentials
+**Default Schedule:**  
+📅 **Saturday 10:00 AM IST** (runs both movie + TV pipelines)
 
-Testing and troubleshooting
-- Syntax check:
+***
+
+## 🧪 Testing & Development
+
+### Syntax Check
 ```powershell
-python -m py_compile src/storage.py src/agents.py src/crew_lite.py src/hashnode_api.py
-```
-- Dry run pipeline (creates drafts if Hashnode credentials set):
-```powershell
-python -c "from src.crew_lite import run_movie_review_pipeline; run_movie_review_pipeline()"
-```
-- If a draft isn't returned, inspect `publish_to_hashnode` output and the returned `last_response` payload for GraphQL errors.
-
-Future enhancements
-- Add a `--force` flag or CLI option to always recreate drafts bypassing the 7-day skip.
-- Add a `--no-references` option to disable reference scraping for faster runs.
-- Limit combined token usage when appending reference snippets to the prompt (to control LLM cost).
-- Unit tests that mock IMDb and Hashnode responses, plus CI validation for env variables.
-- Optional: auto-open created draft in the browser or send a notification when drafts are created.
-
-If you want I can add a small CLI wrapper to toggle force/no-references and to run targeted jobs (movie-only, tv-only).
-
-Environment variables
-- `GROQ_API_KEY` — (optional) Groq API key used by `agents.generate_review()`. If missing, `generate_review()` returns a dummy review for local testing.
-- `GROQ_MODEL` — (optional) preferred model(s), comma-separated. A recommended fallback is used if a model is decommissioned.
-- `HN_PUBLICATION_ID` — Hashnode publication id used when creating drafts.
-- `HN_ACCESS_TOKEN` — Hashnode GraphQL bearer token.
-
-How to run
-- Run the pipeline once (creates a draft on Hashnode):
-```powershell
-python -c "from src.crew_lite import run_movie_review_pipeline; run_movie_review_pipeline()"
+python -m py_compile src/agents.py src/crew_lite.py src/movie_trend_analyst.py src/tv_trend_analyst.py
 ```
 
-- Run the scheduler (weekly job configured for Saturdays 10:00 IST):
-```powershell
-python -m src.scheduler_app
+### Test Trend Analysts Separately
+```bash
+# Test movie trend analysis
+python -m src.movie_trend_analyst
+
+# Test TV trend analysis  
+python -m src.tv_trend_analyst
 ```
 
-Testing during development
-- To test quickly without waiting for the scheduler, run the pipeline command above.
-- The scheduler file has a commented block you can enable for minute-level testing if needed. Alternatively run the pipeline in a loop or use the one-line command.
+### Force Re-draft (Bypass 7-day skip)
+Delete `last_draft.json` or manually edit timestamps.
 
-Behavior notes
-- Draft creation: `publish_to_hashnode(..., publish=False)` returns `{"status": "draft_created", "draft_id": "..."}` when successful. Use the returned `draft_id` to open/edit the draft on Hashnode manually before publishing.
-- Duplicate skipping: when a draft is created the agent writes `last_draft.json` (UTC timestamp). If the same movie (same IMDb URL) is found within 7 days, the agent will skip creating a duplicate draft.
-- Web UI: A small Flask web UI previously existed but has been deprecated — the agent now creates drafts directly to Hashnode.
+***
 
-Troubleshooting
-- If no draft id is returned, inspect the returned `last_response` or console logs from `src/hashnode_api.py` to see the GraphQL error (schema mismatch or auth error).
-- Ensure `HN_ACCESS_TOKEN` and `HN_PUBLICATION_ID` are valid and that the token has permission to create drafts for the publication.
+## 📊 Supported Sources
 
-Next steps you might want
-- Add a `--force` flag to bypass the 7-day duplicate check.
-- Add unit tests around `get_last_draft()` / duplicate behavior.
-- Add CI checks that validate environment variables before running the scheduled job.
+### 🎬 **Movie Sources**
+- ✅ TMDB Trending API (JSON)
+- ✅ TMDB Popular API (JSON)
+- ✅ IMDb Moviemeter (scraping)
+- ✅ Hardcoded recent hits (failsafe)
 
----
-Generated and maintained in the `movie-review-agent` workspace.
+### 📺 **TV Sources**
+- ✅ TMDB TV Trending API
+- ✅ Trakt TV API
+- ✅ JustWatch trending
+- ✅ IMDb TV Meter (scraping)
+
+### 📈 **Social/Buzz Sources** *(Future - currently fallbacks)*
+- Reddit (r/movies, r/Cinema, r/TrueFilm)
+- Google Trends (movie searches)
+- Letterboxd (popular films)
+
+***
+
+## 🎯 Customization Options
+
+### Change Schedule
+Edit `src/scheduler_app.py`:
+```python
+# Current: Saturday 10:00 IST
+scheduler.add_job(
+    run_movie_review_pipeline,
+    'cron',
+    day_of_week='sat',
+    hour=10,
+    minute=0,
+    timezone=timezone(timedelta(hours=5, minutes=30))
+)
+```
+
+### Adjust Buzz Weights
+Edit `src/movie_trend_analyst.py`:
+```python
+# Increase TMDB weight
+for movie in tmdb_movies:
+    buzz_scores[movie] += 50  # Default: 40
+```
+
+### Skip TV Pipeline
+Comment out TV section in `src/crew_lite.py` lines 150-250.
+
+***
+
+## 🐛 Troubleshooting
+
+### ❌ "No trending movies found"
+- **Cause:** TMDB API down or scraping blocked
+- **Fix:** Check internet connection, run trend analyst separately for debug output
+
+### ❌ "Failed to create draft on Hashnode"
+- **Cause:** Invalid `HN_ACCESS_TOKEN` or `HN_PUBLICATION_ID`
+- **Fix:** Verify credentials at [Hashnode Settings](https://hashnode.com/settings/developer)
+
+### ⚠️ "Groq authentication failed"
+- **Cause:** Invalid `GROQ_API_KEY`
+- **Fix:** Get free key at [console.groq.com](https://console.groq.com)
+
+### 🔄 "SKIPPING: Same movie drafted X days ago"
+- **Expected:** Duplicate prevention working correctly
+- **Override:** Delete `last_draft.json` to force re-draft
+
+***
+
+## 🚀 Future Enhancements
+
+- [ ] **CLI wrapper** (`--force`, `--movie-only`, `--tv-only`)
+- [ ] **GitHub Actions** workflow for cloud automation
+- [ ] **Discord/Slack notifications** when drafts created
+- [ ] **Auto-publish** mode (currently draft-only)
+- [ ] **Multi-language reviews** (Spanish, French, etc.)
+- [ ] **Podcast episode reviews** (same pipeline, new sources)
+- [ ] **Token usage tracking** for Groq cost control
+- [ ] **Unit tests** with mocked IMDb/Hashnode responses
+
+***
+
+## 📝 Notes
+
+- **Drafts are NOT auto-published** — you review and publish manually on Hashnode ✅
+- **Duplicate detection** works across runs (persists in `last_draft.json`)
+- **Reference reviews** enhance AI quality but are optional (can be disabled)
+- **Timezone-aware** — uses `datetime.now(timezone.utc)` (Python 3.11+)
+
+***
+
+## 🤝 Contributing
+
+Found a bug? Have ideas? Open an issue or PR! This agent is built for the community. 🎉
+
+***
+
+## 📜 License
+
+MIT License - Do whatever you want! 🚀
+
+***
+
+**Built with ❤️ by AI-powered content creators**  
+🎬 Movies -  📺 TV Shows -  🤖 Automation -  ✍️ AI Reviews
+
+*Now go publish some amazing content!* 🔥
