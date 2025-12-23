@@ -1,20 +1,24 @@
 {
   "movie": {
     "item": {
-      "title": "View title page for Avatar: Fire and Ash",
-      "url": "https://www.imdb.com/title/tt1757678/"
+      "title": "Avatar: Fire and Ash",
+      "url": "https://www.imdb.com/title/tt1757678/",
+      "buzz_score": 20,
+      "source": "trend_analysis"
     },
-    "draft_id": "694a9e355c1fa9072c0ecc90",
-    "timestamp": "2025-12-23T13:50:46.617123Z"
+    "draft_id": "694ad1ea90c60864ae4d7dbc",
+    "timestamp": "2025-12-23T17:31:23.210101Z"
   },
   "draft_id": "694a8a30c1580575dece365e",
   "timestamp": "2025-12-23T12:25:21.088888Z",
   "tv": {
     "item": {
-      "title": "View title page for Stranger Things",
-      "url": "https://www.imdb.com/title/tt4574334/"
+      "title": "IT: Welcome to Derry",
+      "url": "https://www.imdb.com/title/tt19244304/",
+      "buzz_score": 26,
+      "source": "trend_analysis"
     },
-    "draft_id": "694a9e4543b10451feca696c",
-    "timestamp": "2025-12-23T13:51:02.391498Z"
+    "draft_id": "694ad21085b21dc282ce6bc2",
+    "timestamp": "2025-12-23T17:32:00.819557Z"
   }
 }

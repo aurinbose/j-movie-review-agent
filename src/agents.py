@@ -6,13 +6,11 @@ from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 from groq import Groq, BadRequestError, NotFoundError, AuthenticationError
 
-
 load_dotenv()
 
 # Configuration
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-# Recommended fallback when Groq reports a model is decommissioned
 RECOMMENDED_MODEL = os.getenv("GROQ_RECOMMENDED_MODEL", "llama-3.3-70b-versatile")
 
 # Logger
@@ -20,7 +18,7 @@ logger = logging.getLogger(__name__)
 if not logger.handlers:
     logging.basicConfig(level=logging.INFO)
 
-# Initialize Groq client if key present
+# Initialize Groq client
 groq_client = None
 if GROQ_API_KEY:
     try:
@@ -30,15 +28,64 @@ if GROQ_API_KEY:
         groq_client = None
 
 
+def resolve_imdb_title_url(search_url: str, title: str) -> str | None:
+    """
+    🔍 Resolve IMDb search URL to actual title page URL.
+    Works for both movies AND TV shows.
+    
+    Args:
+        search_url: IMDb search URL (e.g., /find?q=Interstellar)
+        title: Title name for logging
+        
+    Returns:
+        Clean IMDb title URL (e.g., https://www.imdb.com/title/tt0816692/) or None
+    
+    Example:
+        >>> resolve_imdb_title_url("https://www.imdb.com/find?q=Interstellar", "Interstellar")
+        'https://www.imdb.com/title/tt0816692/'
+    """
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        resp = requests.get(search_url, headers=headers, timeout=10)
+        
+        if resp.status_code != 200:
+            logger.warning("IMDb search returned %d for '%s'", resp.status_code, title)
+            return None
+        
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        
+        # Try multiple selectors for IMDb search results
+        selectors = [
+            'section[data-testid="find-results-section-title"] ul li a',  # Movies
+            'section[data-testid="find-results-section-tv"] ul li a',     # TV Shows
+            'td.result_text a',  # Old IMDb layout
+            'a[href*="/title/tt"]',  # Generic title link
+        ]
+        
+        for selector in selectors:
+            links = soup.select(selector)
+            for link in links:
+                href = link.get('href', '')
+                if '/title/tt' in href:
+                    # Extract clean title URL (remove query params)
+                    title_id = href.split('/title/')[1].split('/')[0]
+                    clean_url = f"https://www.imdb.com/title/{title_id}/"
+                    logger.info("Resolved '%s' to %s", title, clean_url)
+                    return clean_url
+        
+        logger.warning("Could not resolve IMDb URL for '%s'", title)
+        return None
+        
+    except Exception as e:
+        logger.exception("Error resolving IMDb title URL for '%s': %s", title, e)
+        return None
+
+
 def get_trending_movie():
     """
-    Return a simple dict: {title, url}
-    Currently: just takes the first movie from IMDb Trending.
-    Later you can switch to a true 'trending' page.
+    Return top trending movie from IMDb moviemeter as {title, url} or None.
+    Tries moviemeter first, then fallback to Top 250.
     """
-    # Try multiple IMDb pages in order of preference — moviemeter first,
-    # then fallback to Top 250. This helps if one page is blocked or has
-    # changed layout.
     urls = [
         "https://www.imdb.com/chart/moviemeter/",
         "https://www.imdb.com/chart/top/",
@@ -46,8 +93,6 @@ def get_trending_movie():
 
     headers = {"User-Agent": "Mozilla/5.0"}
 
-    # A set of selectors to try on each page. We try more specific selectors
-    # first, then fall back to a broad title link selector.
     selectors = [
         "table.chart.full-width tr td.titleColumn a",
         "td.titleColumn a",
@@ -74,8 +119,6 @@ def get_trending_movie():
                 break
 
         if first_row:
-            # Robust title extraction: prefer visible text, then common attributes,
-            # then image alt text (some IMDb listings use images/links without text).
             title = first_row.get_text(strip=True) or first_row.get("title") or first_row.get("aria-label")
             if not title:
                 img = first_row.find("img")
@@ -87,9 +130,7 @@ def get_trending_movie():
             logger.info("Selected trending movie: %s (%s)", title, link)
             return {"title": title, "url": link}
 
-    # If we get here nothing matched on any page — return None so callers
-    # (like `crew_lite`) can handle the absence gracefully.
-    logger.warning("Could not find a trending movie on IMDb using any known selector")
+    logger.warning("Could not find a trending movie on IMDb")
     return None
 
 
@@ -135,8 +176,7 @@ def get_trending_tv():
 
 def get_movie_details(movie_url: str):
     """
-    Scrape the movie page for a plot summary (very simple).
-    This is intentionally minimal to keep it beginner-friendly.
+    Scrape the movie page for plot summary and metadata.
     """
     if not movie_url:
         raise ValueError("movie_url is required")
@@ -150,7 +190,6 @@ def get_movie_details(movie_url: str):
         raise
     soup = BeautifulSoup(resp.text, "html.parser")
 
-    # Very rough selectors – may need adjustment as IMDb changes:
     plot_elem = soup.select_one("span[data-testid='plot-l']")
     if not plot_elem:
         plot_elem = soup.select_one("span[data-testid='plot-xl']")
@@ -160,13 +199,12 @@ def get_movie_details(movie_url: str):
 
 
 def get_tv_details(tv_url: str):
-    """Scrape a TV show page for a summary/plot (reuses movie selectors)."""
-    # IMDb TV show pages generally contain similar plot selectors as movies
+    """Scrape a TV show page for summary/plot (reuses movie selectors)."""
     return get_movie_details(tv_url)
 
 
 def generate_review(title: str, plot: str, source_url: str | None = None) -> str:
-    """Generate AI review using Groq (or dummy if no API key).
+    """Generate AI movie review using Groq.
 
     Args:
         title: Movie title string
@@ -192,7 +230,6 @@ A timeless classic that resonates with audiences worldwide."""
     if ref_reviews:
         references_block = "\n\nREFERENCE REVIEWS:\n"
         for i, r in enumerate(ref_reviews, start=1):
-            # keep snippets short
             snippet = (r.strip()[:800]).replace('\n', ' ')
             references_block += f"{i}) {snippet}\n"
 
@@ -209,8 +246,6 @@ A timeless classic that resonates with audiences worldwide."""
     if references_block:
         prompt = prompt + references_block
 
-    # Try models from GROQ_MODEL (comma-separated) and fall back to a
-    # recommended model if Groq reports decommissioning.
     models = [m.strip() for m in (GROQ_MODEL or "").split(",") if m.strip()]
     if not models:
         models = [RECOMMENDED_MODEL]
@@ -259,8 +294,9 @@ A timeless classic that resonates with audiences worldwide."""
         logger.exception("Failed to parse Groq response")
         return "[REVIEW ERROR] Failed to parse Groq response"
 
+
 def generate_show_review(title: str, plot: str, source_url: str | None = None) -> str:
-    """Generate a TV show review using the same LLM pipeline but a TV-specific prompt.
+    """Generate a TV show review using the same LLM pipeline but TV-specific prompt.
 
     Args:
         title: Show title
@@ -296,7 +332,6 @@ def generate_show_review(title: str, plot: str, source_url: str | None = None) -
         "Write in engaging, conversational style like a professional TV critic."
     )
 
-    # Reuse same model loop as generate_review
     models = [m.strip() for m in (GROQ_MODEL or "").split(",") if m.strip()]
     if not models:
         models = [RECOMMENDED_MODEL]
@@ -345,6 +380,7 @@ def generate_show_review(title: str, plot: str, source_url: str | None = None) -
 
 
 def extract_imdb_id(url: str) -> str | None:
+    """Extract IMDb ID (tt1234567) from URL."""
     import re
     if not url:
         return None
@@ -355,7 +391,7 @@ def extract_imdb_id(url: str) -> str | None:
 
 
 def get_similar_reviews(source_url: str, max_reviews: int = 3) -> list:
-    """Scrape top user review snippets from the IMDb reviews page for the given title URL.
+    """Scrape top user review snippets from IMDb reviews page.
 
     Returns a list of text snippets (may be empty).
     """
@@ -402,4 +438,3 @@ def get_similar_reviews(source_url: str, max_reviews: int = 3) -> list:
                 break
 
     return snippets[:max_reviews]
-
