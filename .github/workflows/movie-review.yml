@@ -22,7 +22,7 @@ jobs:
       
       - name: Install dependencies
         run: |
-          pip install requests beautifulsoup4 cloudscraper groq python-dotenv apscheduler
+          pip install requests beautifulsoup4 cloudscraper groq python-dotenv apscheduler pandas openpyxl
       
       - name: Run movie review pipeline
         env:
