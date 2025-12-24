@@ -1,4 +1,4 @@
-# src/crew_lite.py - MOVIES + TV TREND ANALYSIS INTEGRATED
+# src/crew_lite.py - COMPLETE: MOVIES + TV TREND ANALYSIS + VIDEO GENERATION
 from src.agents import (
     get_trending_movie,
     get_movie_details,
@@ -6,20 +6,25 @@ from src.agents import (
     get_trending_tv,
     get_tv_details,
     generate_show_review,
-    resolve_imdb_title_url,  # ✅ Imported from agents
+    resolve_imdb_title_url,
 )
 from src.hashnode_api import publish_to_hashnode, draft_exists
+from src.prompt_logger import build_video_prompt, append_prompt_to_excel
 import os
 from dotenv import load_dotenv
-from datetime import datetime, timedelta, timezone  # ✅ Added timezone
-from pathlib import Path
+from datetime import datetime, timedelta, timezone
 from src.storage import save_last_draft, get_last_draft
 
 load_dotenv()
 
 
-def run_movie_review_pipeline():
-    """🎬📺 COMPLETE CONTENT PIPELINE - MOVIES + TV SHOWS WITH TREND ANALYSIS"""
+def run_movie_review_pipeline(generate_video: bool = False, publish_video: bool = False):
+    """
+    🎬📺 CONTENT PIPELINE - MOVIES + TV SHOWS WITH TREND ANALYSIS
+    
+    This version skips video generation and instead logs a weekly video prompt
+    built from the generated review content.
+    """
     print("="*80)
     print(f"🎥📺 CONTENT REVIEW AGENT - {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print("="*80)
@@ -119,13 +124,14 @@ def run_movie_review_pipeline():
             print(f"📍 Source: {movie.get('source')}")
             print(f"✅ Plot: {details.get('plot', '')[:150]}...")
             
-            # Generate review
+            # PHASE 3: Generate review
             print(f"\n✍️ PHASE 3: Generating review...")
             review = generate_review(movie['title'], details.get('plot', ''), source_url=movie.get('url'))
             print(f"✅ Review: {len(review)} chars")
+            print(f"📄 Preview: {review[:200]}...")
             
-            # Draft management
-            print("\n🌐 PHASE 4: Draft management...")
+            # PHASE 5: Draft management
+            print("\n🌐 PHASE 5: Draft management...")
             last_movie = get_last_draft(kind="movie")
             skip_movie = False
             
@@ -133,24 +139,33 @@ def run_movie_review_pipeline():
                               last_movie.get('item', {}).get('url') == movie['url']):
                 try:
                     ts = last_movie.get('timestamp')
-                    ts_dt = datetime.fromisoformat(ts.rstrip('Z'))
-                    age = datetime.now(timezone.utc) - ts_dt  # ✅ FIXED: timezone-aware
+                    ts_dt = datetime.fromisoformat(ts.rstrip('Z')).replace(tzinfo=timezone.utc)
+                    age = datetime.now(timezone.utc) - ts_dt
                     
                     if age < timedelta(days=7):
                         prev_draft_id = last_movie.get('draft_id')
                         if prev_draft_id and draft_exists(prev_draft_id):
                             print(f"⏭️ SKIPPING: Same movie drafted {age.days} day(s) ago.")
                             skip_movie = True
-                except:
-                    pass
+                except Exception as e:
+                    print(f"⚠️ Error checking last draft: {e}")
             
             if not skip_movie:
                 print(f"📤 Creating draft: {movie_title}")
+                
                 draft_res = publish_to_hashnode(movie['title'], review, publish=False)
                 
                 if draft_res and draft_res.get('draft_id'):
                     print(f"✅ Draft created: {draft_res.get('draft_id')}")
                     save_last_draft(movie, draft_res.get('draft_id'), kind='movie')
+                    print("💾 Draft metadata saved")
+                    prompt = build_video_prompt(movie_title, review)
+                    prompt_path = append_prompt_to_excel(prompt)
+                    print("\n📋 Video prompt generated:\n")
+                    print(prompt)
+                    print(f"\n💾 Prompt saved to: {prompt_path}")
+                else:
+                    print("❌ Failed to create draft")
         else:
             print("❌ Movie pipeline failed")
         
@@ -249,13 +264,14 @@ def run_movie_review_pipeline():
             print(f"📍 Source: {tv.get('source')}")
             print(f"✅ Summary: {tv_details.get('plot', '')[:150]}...")
             
-            # Generate review
+            # PHASE 3: Generate TV review
             print(f"\n✍️ PHASE 3: Generating TV review...")
             tv_review = generate_show_review(tv['title'], tv_details.get('plot', ''), source_url=tv.get('url'))
             print(f"✅ Review: {len(tv_review)} chars")
+            print(f"📄 Preview: {tv_review[:200]}...")
             
-            # Draft management
-            print("\n🌐 PHASE 4: TV Draft management...")
+            # PHASE 5: TV Draft management
+            print("\n🌐 PHASE 5: TV Draft management...")
             last_tv = get_last_draft(kind="tv")
             skip_tv = False
             
@@ -263,24 +279,33 @@ def run_movie_review_pipeline():
                            last_tv.get('item', {}).get('url') == tv['url']):
                 try:
                     ts = last_tv.get('timestamp')
-                    ts_dt = datetime.fromisoformat(ts.rstrip('Z'))
-                    age = datetime.now(timezone.utc) - ts_dt  # ✅ FIXED: timezone-aware
+                    ts_dt = datetime.fromisoformat(ts.rstrip('Z')).replace(tzinfo=timezone.utc)
+                    age = datetime.now(timezone.utc) - ts_dt
                     
                     if age < timedelta(days=7):
                         prev_draft_id = last_tv.get('draft_id')
                         if prev_draft_id and draft_exists(prev_draft_id):
                             print(f"⏭️ SKIPPING: Same show drafted {age.days} day(s) ago.")
                             skip_tv = True
-                except:
-                    pass
+                except Exception as e:
+                    print(f"⚠️ Error checking last TV draft: {e}")
             
             if not skip_tv:
                 print(f"📤 Creating TV draft: {show_title}")
+                
                 tv_draft = publish_to_hashnode(tv['title'], tv_review, publish=False)
                 
                 if tv_draft and tv_draft.get('draft_id'):
                     print(f"✅ TV draft created: {tv_draft.get('draft_id')}")
                     save_last_draft(tv, tv_draft.get('draft_id'), kind='tv')
+                    print("💾 TV draft metadata saved")
+                    tv_prompt = build_video_prompt(show_title, tv_review)
+                    tv_prompt_path = append_prompt_to_excel(tv_prompt)
+                    print("\n📋 TV video prompt generated:\n")
+                    print(tv_prompt)
+                    print(f"\n💾 Prompt saved to: {tv_prompt_path}")
+                else:
+                    print("❌ Failed to create TV draft")
         else:
             print("❌ TV pipeline failed")
         
@@ -291,14 +316,17 @@ def run_movie_review_pipeline():
         print("\n" + "="*80)
         print("🎉 PIPELINE COMPLETED")
         print("="*80)
+        
         if movie:
             print(f"🎬 Movie: {movie.get('title')} (source: {movie.get('source')})")
             if movie.get('buzz_score'):
                 print(f"   Buzz: {movie['buzz_score']}")
+        
         if tv:
             print(f"📺 TV: {tv.get('title')} (source: {tv.get('source')})")
             if tv.get('buzz_score'):
                 print(f"   Buzz: {tv['buzz_score']}")
+        
         print("="*80)
         
     except KeyboardInterrupt:
